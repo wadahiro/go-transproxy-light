@@ -57,7 +57,7 @@ func (s *PassThroughProxy) Start() error {
 		return err
 	}
 
-	log.Printf("info: Start listener on %s category='%s'", s.GetType(), s.ListenAddress)
+	log.Printf("info: Start listener on %s category='%s'", s.ListenAddress, s.GetType())
 
 	l, err := net.Listen("tcp", s.ListenAddress)
 	if err != nil {

@@ -9,11 +9,13 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	"comail.io/go/wincolog"
 	"github.com/comail/colog"
 	transproxy "github.com/wadahiro/go-transproxy-light"
 )
@@ -79,6 +81,9 @@ func main() {
 		Colors: true,
 		Flag:   log.Ldate | log.Ltime | log.Lmicroseconds,
 	})
+	if runtime.GOOS == "windows" {
+		colog.SetOutput(wincolog.Stdout())
+	}
 	colog.ParseFields(true)
 	colog.Register()
 

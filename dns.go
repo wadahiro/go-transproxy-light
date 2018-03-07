@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -55,6 +57,11 @@ func NewDNSProxy(c DNSProxyConfig) *DNSProxy {
 			s += "."
 		}
 		dnsNoProxyZones = append(dnsNoProxyZones, s)
+	}
+	u, err := url.Parse(os.Getenv("http_proxy"))
+	if err == nil {
+		proxyHost := strings.Split(u.Host, ":")
+		dnsNoProxyZones = append(dnsNoProxyZones, proxyHost[0]+".")
 	}
 	c.NoProxyZones = dnsNoProxyZones
 
@@ -126,10 +133,6 @@ func (s *DNSProxy) Start() error {
 			return
 		}
 
-		// access logging
-		host, _, _ := net.SplitHostPort(w.RemoteAddr().String())
-		log.Printf("info: category='DNS-Proxy' remoteAddr='%s' questionName='%s' questionType='%s'", host, req.Question[0].Name, dns.TypeToString[req.Question[0].Qtype])
-
 		// Resolve by proxied private DNS
 		for _, domain := range s.NoProxyZones {
 			log.Printf("debug: category='DNS-Proxy' Checking DNS route, request: %s, no_proxy: %s", req.Question[0].Name, domain)
@@ -199,6 +202,10 @@ func (s *DNSProxy) handlePublic(w dns.ResponseWriter, req *dns.Msg) {
 	m.Answer = []dns.RR{rr}
 	m.Rcode = dns.RcodeSuccess
 
+	// access logging
+	host, _, _ := net.SplitHostPort(w.RemoteAddr().String())
+	log.Printf("info: Resolved by public. category='DNS-Proxy' remoteAddr='%s' questionName='%s' questionType='%s' answer='%v'", host, req.Question[0].Name, dns.TypeToString[req.Question[0].Qtype], m.Answer)
+
 	w.WriteMsg(m)
 }
 
@@ -218,6 +225,15 @@ func (s *DNSProxy) handlePrivate(w dns.ResponseWriter, req *dns.Msg) {
 		dns.HandleFailed(w, req)
 		return
 	}
+
+	// access logging
+	host, _, _ := net.SplitHostPort(w.RemoteAddr().String())
+	if len(resp.Answer) > 0 {
+		log.Printf("info: Resolved by private. category='DNS-Proxy' remoteAddr='%s' questionName='%s' questionType='%s' answer='%v'", host, req.Question[0].Name, dns.TypeToString[req.Question[0].Qtype], resp.Answer)
+	} else {
+		log.Printf("info: Resolved by private. category='DNS-Proxy' remoteAddr='%s' questionName='%s' questionType='%s' answer=''", host, req.Question[0].Name, dns.TypeToString[req.Question[0].Qtype])
+	}
+
 	w.WriteMsg(resp)
 }
 

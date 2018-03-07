@@ -76,9 +76,11 @@ func (s *PassThroughProxy) Start() error {
 
 			go func(conn net.Conn) {
 				// access logging
-				localAddr, _, _ := net.SplitHostPort(conn.LocalAddr().String())
-				remoteAddr, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
-				hostName, err := s.DNSProxy.ReverseLookup(localAddr)
+				localAddr := conn.LocalAddr().String()
+				localHost, localPort, _ := net.SplitHostPort(localAddr)
+				remoteAddr := conn.RemoteAddr().String()
+
+				hostName, err := s.DNSProxy.ReverseLookup(localHost)
 				if err != nil {
 					log.Printf("error: category='%s' remoteAddr='%s' localAddr='%s' Can't resolve localAddr", s.GetType(), remoteAddr, localAddr)
 					conn.Close()
@@ -86,9 +88,9 @@ func (s *PassThroughProxy) Start() error {
 				}
 				log.Printf("info: category='%s' remoteAddr='%s' localAddr='%s' resolvedHostName='%s'", s.GetType(), remoteAddr, localAddr, hostName)
 
-				destConn, err := pdialer.Dial("tcp", hostName)
+				destConn, err := pdialer.Dial("tcp", hostName+":"+localPort)
 				if err != nil {
-					log.Printf("error: category='%s' remoteAddr='%s' localAddr='%s' %s", s.GetType(), remoteAddr, localAddr, err.Error())
+					log.Printf("error: category='%s' remoteAddr='%s' localAddr='%s' hostName='%s:%s' Can't connect: %s", s.GetType(), remoteAddr, localAddr, hostName, localPort, err.Error())
 					conn.Close()
 					return
 				}

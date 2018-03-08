@@ -133,7 +133,13 @@ func startProxy(config Config) {
 
 	// serve until exit
 	sig := make(chan os.Signal)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sig,
+		os.Interrupt,
+		syscall.SIGHUP,
+		syscall.SIGINT,
+		syscall.SIGTERM,
+		syscall.SIGQUIT,
+	)
 	<-sig
 
 	log.Printf("info: Proxy servers stopping.")

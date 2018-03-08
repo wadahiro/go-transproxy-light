@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/net/proxy"
@@ -90,12 +89,8 @@ func (s *PassThroughProxy) Start() error {
 					return
 				}
 
-				wg := &sync.WaitGroup{}
-				wg.Add(1)
-				go transfer(wg, destConn, conn)
-				wg.Add(1)
-				go transfer(wg, conn, destConn)
-				wg.Wait()
+				go transfer(destConn, conn)
+				go transfer(conn, destConn)
 			}(conn)
 		}
 	}()
@@ -106,9 +101,8 @@ func (s *PassThroughProxy) Start() error {
 func (s *PassThroughProxy) Stop() {
 }
 
-func transfer(wg *sync.WaitGroup, destination io.WriteCloser, source io.ReadCloser) {
+func transfer(destination io.WriteCloser, source io.ReadCloser) {
 	defer destination.Close()
 	defer source.Close()
-	defer wg.Done()
 	io.Copy(destination, source)
 }

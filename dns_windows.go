@@ -29,41 +29,43 @@ type DNSSetting struct {
 	ServerAddresses []string
 }
 
-func (s *DNSProxy) Setup() {
+func (s *DNSProxy) Setup() []string {
 	currentSettings := []DNSSetting{}
 
 	// start a local powershell process
 	back := &backend.Local{}
 	shell, err := ps.New(back)
 	if err != nil {
-		log.Printf("warn: category='DNS-Proxy[windows]' DNS Setup failed: %s", err.Error())
-		return
+		log.Printf("warn: category='DNS-Proxy[windows]' DNS Setup failed: %s", err)
+		return []string{}
 	}
 	defer shell.Exit()
 
 	stdout, _, err := shell.Execute("Get-DnsClientServerAddress -AddressFamily IPv4 | ConvertTo-Json")
 	if err != nil {
-		log.Printf("warn: category='DNS-Proxy[windows]' DNS Setup failed: %s", err.Error())
-		return
+		log.Printf("warn: category='DNS-Proxy[windows]' DNS Setup failed: %s", err)
+		return []string{}
 	}
 	j := ([]byte)(stdout)
 	dnsServerAddresses := []DNSServerAddress{}
 	if err := json.Unmarshal(j, &dnsServerAddresses); err != nil {
-		log.Printf("warn: category='DNS-Proxy[windows]' DNS Setup failed: %s", err.Error())
-		return
+		log.Printf("warn: category='DNS-Proxy[windows]' DNS Setup failed: %s", err)
+		return []string{}
 	}
 
 	stdout, _, err = shell.Execute("Get-NetIPInterface -AddressFamily IPv4 | ConvertTo-Json")
 	if err != nil {
-		log.Printf("warn: category='DNS-Proxy[windows]' DNS Setup failed: %s", err.Error())
-		return
+		log.Printf("warn: category='DNS-Proxy[windows]' DNS Setup failed: %s", err)
+		return []string{}
 	}
 	j = ([]byte)(stdout)
 	netIPInterfaces := []NetIPInterface{}
 	if err := json.Unmarshal(j, &netIPInterfaces); err != nil {
-		log.Printf("warn: category='DNS-Proxy[windows]' DNS Setup failed: %s", err.Error())
-		return
+		log.Printf("warn: category='DNS-Proxy[windows]' DNS Setup failed: %s", err)
+		return []string{}
 	}
+
+	dnsServers := map[string]struct{}{}
 
 	for _, nii := range netIPInterfaces {
 		for _, dsa := range dnsServerAddresses {
@@ -79,6 +81,9 @@ func (s *DNSProxy) Setup() {
 						Dhcp:            dhcp,
 						ServerAddresses: dsa.ServerAddresses,
 					})
+					for _, serverAddress := range dsa.ServerAddresses {
+						dnsServers[serverAddress] = struct{}{}
+					}
 				}
 			}
 		}
@@ -91,9 +96,15 @@ func (s *DNSProxy) Setup() {
 	for _, setting := range currentSettings {
 		stdout, _, err = shell.Execute(fmt.Sprintf("Set-DnsClientServerAddress -InterfaceIndex %d -ServerAddresses (\"%s\")", setting.InterfaceIndex, "127.0.0.1"))
 		if err != nil {
-			log.Printf("warn: category='DNS-Proxy[windows]' DNS Setup failed: %s", err.Error())
+			log.Printf("warn: category='DNS-Proxy[windows]' DNS Setup failed: %s", err)
 		}
 	}
+
+	results := []string{}
+	for k, _ := range dnsServers {
+		results = append(results, k+":53")
+	}
+	return results
 }
 
 func (s *DNSProxy) Teardown() {
@@ -107,7 +118,7 @@ func (s *DNSProxy) Teardown() {
 	back := &backend.Local{}
 	shell, err := ps.New(back)
 	if err != nil {
-		log.Printf("warn: category='DNS-Proxy[windows]' DNS Teardown failed: %s", err.Error())
+		log.Printf("warn: category='DNS-Proxy[windows]' DNS Teardown failed: %s", err)
 		return
 	}
 
@@ -116,14 +127,14 @@ func (s *DNSProxy) Teardown() {
 		if setting.Dhcp {
 			_, _, err := shell.Execute(fmt.Sprintf("Set-DnsClientServerAddress -InterfaceIndex %d -ResetServerAddresses", setting.InterfaceIndex))
 			if err != nil {
-				log.Printf("warn: category='DNS-Proxy[windows]' DNS Teardown failed: %s", err.Error())
+				log.Printf("warn: category='DNS-Proxy[windows]' DNS Teardown failed: %s", err)
 			}
 
 		} else {
 			servers := strings.Join(setting.ServerAddresses, "\",\"")
 			_, _, err := shell.Execute(fmt.Sprintf("Set-DnsClientServerAddress -InterfaceIndex %d -ServerAddresses (\"%s\")", setting.InterfaceIndex, servers))
 			if err != nil {
-				log.Printf("warn: category='DNS-Proxy[windows]' DNS Teardown failed: %s", err.Error())
+				log.Printf("warn: category='DNS-Proxy[windows]' DNS Teardown failed: %s", err)
 			}
 		}
 	}

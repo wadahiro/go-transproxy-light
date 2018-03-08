@@ -167,6 +167,12 @@ func (s *DNSProxy) Start() error {
 		}
 	}
 
+	dnsServers := s.Setup()
+	if len(dnsServers) > 0 && len(s.PrivateDNS) == 0 {
+		log.Printf("info: category='DNS-Proxy' Use DNS servers: %s", dnsServers)
+		s.PrivateDNS = dnsServers
+	}
+
 	go func() {
 		if s.udpServer != nil {
 			if err := s.udpServer.ListenAndServe(); err != nil {
@@ -179,8 +185,6 @@ func (s *DNSProxy) Start() error {
 			}
 		}
 	}()
-
-	s.Setup()
 
 	return nil
 }

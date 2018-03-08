@@ -114,6 +114,11 @@ func (s *DNSProxy) Setup() []string {
 }
 
 func (s *DNSProxy) Teardown() {
+	defer func() {
+		// DNS cache clear
+		exec.Command("ipconfig", "/flushdns").Run()
+	}()
+
 	settings, ok := s.dnsSettings.([]DNSSetting)
 	if !ok {
 		log.Printf("warn: category='DNS-Proxy[windows]' DNS Teardown failed: %v", settings)

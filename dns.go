@@ -28,6 +28,8 @@ type DNSProxy struct {
 	endIP        uint32
 	ipMap        map[string]uint32
 	ipReverseMap map[uint32]string
+
+	dnsSettings interface{}
 }
 
 type DNSProxyConfig struct {
@@ -178,6 +180,8 @@ func (s *DNSProxy) Start() error {
 		}
 	}()
 
+	s.Setup()
+
 	return nil
 }
 
@@ -239,6 +243,8 @@ func (s *DNSProxy) handlePrivate(w dns.ResponseWriter, req *dns.Msg) {
 
 func (s *DNSProxy) Stop() {
 	log.Printf("info: category='DNS-Proxy' Shutting down DNS service on interrupt\n")
+
+	s.Teardown()
 
 	if s.udpServer != nil {
 		if err := s.udpServer.Shutdown(); err != nil {

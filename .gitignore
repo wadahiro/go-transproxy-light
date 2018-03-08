@@ -2,3 +2,4 @@ vendor
 *.tar.gz
 *.zip
 bin/
+rsrc.syso

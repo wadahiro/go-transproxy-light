@@ -14,6 +14,22 @@
   revision = "fba8e7b1f46c3607f09760ce3880066e7ff57c5a"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/gorillalabs/go-powershell"
+  packages = [
+    ".",
+    "backend",
+    "utils"
+  ]
+  revision = "8a975e1f46d292e02c8825f112090196bbc20ac1"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/juju/errors"
+  packages = ["."]
+  revision = "c7d06af17c68cd34c835053720b21f6549d9b0ee"
+
+[[projects]]
   name = "github.com/mattn/go-colorable"
   packages = ["."]
   revision = "167de6bfdfba052fa6b2d3664c8f5272e23c9072"
@@ -62,6 +78,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "5746c15cc334def1d26d8674e5ae4eeb49bdec2852f4fe951a383b8bf06116e7"
+  inputs-digest = "2af420c2f88ec5d6d85dff6eb794a78724f7d04e6ab8660f1e4c5b80dc0c9310"
   solver-name = "gps-cdcl"
   solver-version = 1

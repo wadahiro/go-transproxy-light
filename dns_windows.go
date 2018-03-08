@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os/exec"
 	"strings"
 
 	ps "github.com/gorillalabs/go-powershell"
@@ -30,6 +31,9 @@ type DNSSetting struct {
 }
 
 func (s *DNSProxy) Setup() []string {
+	// DNS cache clear
+	exec.Command("ipconfig", "/flushdns").Run()
+
 	currentSettings := []DNSSetting{}
 
 	// start a local powershell process
@@ -82,7 +86,9 @@ func (s *DNSProxy) Setup() []string {
 						ServerAddresses: dsa.ServerAddresses,
 					})
 					for _, serverAddress := range dsa.ServerAddresses {
-						dnsServers[serverAddress] = struct{}{}
+						if !strings.HasPrefix(serverAddress, "127.") {
+							dnsServers[serverAddress] = struct{}{}
+						}
 					}
 				}
 			}

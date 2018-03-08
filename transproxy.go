@@ -79,6 +79,9 @@ func (s *Transproxy) Start() error {
 	if err := s.dnsProxy.Start(); err != nil {
 		log.Fatalf("alert: category='DNS-Proxy' %s", err.Error())
 	}
+
+	log.Printf("info: transproxy-light started")
+
 	return nil
 }
 

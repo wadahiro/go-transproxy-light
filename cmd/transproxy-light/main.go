@@ -91,6 +91,7 @@ func main() {
 	rand.Seed(time.Now().UTC().UnixNano())
 
 	// setup logger
+	colog.SetMinLevel(colog.LInfo)
 	colog.SetDefaultLevel(colog.LDebug)
 	colog.SetFormatter(&colog.StdFormatter{
 		Colors: true,
@@ -101,12 +102,6 @@ func main() {
 	}
 	colog.ParseFields(true)
 	colog.Register()
-
-	level, err := colog.ParseLevel(config.LogLevel)
-	if err != nil {
-		log.Fatalf("alert: Invalid log level: %s", err)
-	}
-	colog.SetMinLevel(level)
 
 	startProxy(config)
 }
@@ -130,6 +125,13 @@ func startProxy(config Config) {
 		},
 	)
 	proxy.Start()
+
+	// Change logLevel after server statup
+	level, err := colog.ParseLevel(config.LogLevel)
+	if err != nil {
+		log.Fatalf("alert: Invalid log level: %s", err)
+	}
+	colog.SetMinLevel(level)
 
 	// serve until exit
 	sig := make(chan os.Signal)

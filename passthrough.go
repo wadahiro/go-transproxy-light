@@ -5,7 +5,6 @@ import (
 	"log"
 	"net"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,7 +19,7 @@ type PassThroughProxy struct {
 
 type PassThroughProxyConfig struct {
 	ListenAddress string
-	NoProxy       NoProxy
+	ProxyURL      *url.URL
 	DNSProxy      *DNSProxy
 }
 
@@ -47,12 +46,8 @@ func (s *PassThroughProxy) Start() error {
 		KeepAlive: 3 * time.Minute,
 		DualStack: true,
 	}
-	u, err := url.Parse(os.Getenv("http_proxy"))
-	if err != nil {
-		return err
-	}
 
-	pdialer, err := proxy.FromURL(u, dialer)
+	pdialer, err := proxy.FromURL(s.ProxyURL, dialer)
 	if err != nil {
 		return err
 	}

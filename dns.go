@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -36,8 +34,8 @@ type DNSProxyConfig struct {
 	DNSListenAddress string
 	DNSEnableUDP     bool
 	DNSEnableTCP     bool
-	PrivateDNS       string
-	NoProxyZones     []string
+	PrivateDNS       []string
+	NoProxy          []string
 	StartLocalIP     string
 	EndLocalIP       string
 }
@@ -45,27 +43,29 @@ type DNSProxyConfig struct {
 func NewDNSProxy(c DNSProxyConfig) *DNSProxy {
 
 	// fix dns address
-	if c.PrivateDNS != "" {
-		_, _, err := net.SplitHostPort(c.PrivateDNS)
-		if err != nil {
-			c.PrivateDNS = net.JoinHostPort(c.PrivateDNS, "53")
+	dnsServers := []string{}
+	for _, dnsServer := range c.PrivateDNS {
+		if dnsServer != "" {
+			_, _, err := net.SplitHostPort(dnsServer)
+			if err != nil {
+				fixed := net.JoinHostPort(dnsServer, "53")
+				dnsServers = append(dnsServers, fixed)
+			}
 		}
 	}
+	c.PrivateDNS = dnsServers
 
 	// fix domains for DNS noproxy zones
-	var dnsNoProxyZones []string
-	for _, s := range c.NoProxyZones {
+	var dnsNoProxy []string
+	for _, s := range c.NoProxy {
 		if !strings.HasSuffix(s, ".") {
 			s += "."
 		}
-		dnsNoProxyZones = append(dnsNoProxyZones, s)
+		dnsNoProxy = append(dnsNoProxy, s)
 	}
-	u, err := url.Parse(os.Getenv("http_proxy"))
-	if err == nil {
-		proxyHost := strings.Split(u.Host, ":")
-		dnsNoProxyZones = append(dnsNoProxyZones, proxyHost[0]+".")
-	}
-	c.NoProxyZones = dnsNoProxyZones
+	c.NoProxy = dnsNoProxy
+
+	log.Printf("info: NoProxyZone: %s", c.NoProxy)
 
 	return &DNSProxy{
 		DNSProxyConfig: c,
@@ -136,7 +136,7 @@ func (s *DNSProxy) Start() error {
 		}
 
 		// Resolve by proxied private DNS
-		for _, domain := range s.NoProxyZones {
+		for _, domain := range s.NoProxy {
 			log.Printf("debug: category='DNS-Proxy' Checking DNS route, request: %s, no_proxy: %s", req.Question[0].Name, domain)
 			if strings.HasSuffix(req.Question[0].Name, domain) {
 				log.Printf("debug: category='DNS-Proxy' Matched! Routing to private DNS, request: %s, no_proxy: %s", req.Question[0].Name, domain)
@@ -170,12 +170,12 @@ func (s *DNSProxy) Start() error {
 	go func() {
 		if s.udpServer != nil {
 			if err := s.udpServer.ListenAndServe(); err != nil {
-				log.Fatal("alert: category='DNS-Proxy' %s", err.Error())
+				log.Fatal("alert: category='DNS-Proxy' %s", err)
 			}
 		}
 		if s.tcpServer != nil {
 			if err := s.tcpServer.ListenAndServe(); err != nil {
-				log.Fatal("alert: category='DNS-Proxy' %s", err.Error())
+				log.Fatal("alert: category='DNS-Proxy' %s", err)
 			}
 		}
 	}()
@@ -223,9 +223,18 @@ func (s *DNSProxy) handlePrivate(w dns.ResponseWriter, req *dns.Msg) {
 
 	log.Printf("debug: category='DNS-Proxy' DNS request. %#v, %s", req, req)
 
-	resp, _, err := c.Exchange(req, s.PrivateDNS)
-	if err != nil {
-		log.Printf("warn: category='DNS-Proxy' DNS Client failed. %s, %#v, %s", err.Error(), req, req)
+	var resp *dns.Msg
+	var err error
+	for _, dnsServer := range s.PrivateDNS {
+		resp, _, err = c.Exchange(req, dnsServer)
+		if err != nil {
+			log.Printf("warn: category='DNS-Proxy' DNS request to %s failed. %s, %#v, %s", dnsServer, err, req, req)
+		} else {
+			break
+		}
+	}
+
+	if resp == nil {
 		dns.HandleFailed(w, req)
 		return
 	}
@@ -248,13 +257,13 @@ func (s *DNSProxy) Stop() {
 
 	if s.udpServer != nil {
 		if err := s.udpServer.Shutdown(); err != nil {
-			log.Printf("error: category='DNS-Proxy' %s", err.Error())
+			log.Printf("warn: category='DNS-Proxy' %s", err)
 		}
 		s.udpServer = nil
 	}
 	if s.tcpServer != nil {
 		if err := s.tcpServer.Shutdown(); err != nil {
-			log.Printf("error: category='DNS-Proxy' %s", err.Error())
+			log.Printf("warn: category='DNS-Proxy' %s", err)
 		}
 		s.tcpServer = nil
 	}

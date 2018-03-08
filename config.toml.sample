@@ -1,0 +1,13 @@
+ProxyURL = "http://user:pass@proxy.yourorg.org:3128"
+NoProxy = [
+    ".yourorg.org",
+]
+Port = [
+    22,
+    80,
+    443,
+]
+LogLevel = "info"
+DNS = [
+    "192.168.0.24"
+]

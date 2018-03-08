@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"log"
 	"math/rand"
 	"net"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -16,6 +18,7 @@ import (
 	"time"
 
 	"comail.io/go/wincolog"
+	"github.com/BurntSushi/toml"
 	"github.com/comail/colog"
 	transproxy "github.com/wadahiro/go-transproxy-light"
 )
@@ -28,55 +31,67 @@ func orPanic(err error) {
 
 var (
 	fs       = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	loglevel = fs.String(
+	logLevel = fs.String(
 		"loglevel",
 		"info",
 		"Log level, one of: debug, info, warn, error, fatal, panic",
 	)
 
-	privateDNS = fs.String("private-dns", "",
-		"Private DNS addresses for no_proxy targets (IP[:port],IP[:port],...)")
+	dns = fs.String("dns", "",
+		"DNS servers for no_proxy targets (IP[:port],IP[:port],...)")
 
-	proxyListenPorts = fs.String(
-		"proxy-listen-ports", "80,443,22", "Listen ports for transparent proxy, as `port1,port2,...`",
+	port = fs.String(
+		"port", "80,443,22", "Listen ports for transparent proxy, as `port1,port2,...`",
 	)
 
-	dnsProxyListenAddress = fs.String(
-		"dns-listen", ":53", "DNS listen address, as `[host]:port`",
+	loopbackAddressRange = fs.String(
+		"loopback-address-range", "127.0.1.0-127.0.255.255", "Range of local IP address, as `127.0.1.0-127.0.255.255`",
 	)
-
-	startLocalIP = fs.String(
-		"start-ip", "127.0.1.0", "Start of local IP address, as `127.0.1.0`",
-	)
-
-	endLocalIP = fs.String(
-		"end-ip", "127.0.255.255", "End of local IP address, as `127.0.255.255`",
-	)
-
-	dnsEnableTCP = fs.Bool("dns-tcp", true, "DNS Listen on TCP")
-	dnsEnableUDP = fs.Bool("dns-udp", true, "DNS Listen on UDP")
 )
 
+type Config struct {
+	ProxyURL             string
+	NoProxy              []string
+	DNS                  []string
+	Port                 []int
+	LogLevel             string
+	LoopbackAddressRange string
+}
+
 func main() {
+	// Configure from cli options or config.toml
+	var config Config
 	fs.Usage = func() {
 		_, exe := filepath.Split(os.Args[0])
 		fmt.Fprint(os.Stderr, "go-transproxy-light.\n\n")
 		fmt.Fprintf(os.Stderr, "Usage:\n\n  %s [options]\n\nOptions:\n\n", exe)
 		fs.PrintDefaults()
 	}
-	fs.Parse(os.Args[1:])
+
+	_, err := toml.DecodeFile("config.toml", &config)
+	if err != nil {
+		fs.Parse(os.Args[1:])
+
+		proxyUrl := os.Getenv("http_proxy")
+		noProxy := strings.Split(os.Getenv("no_proxy"), ",")
+		dnsServers := strings.Split(*dns, ",")
+		listenPort := toPorts(*port)
+
+		config = Config{
+			ProxyURL:             proxyUrl,
+			NoProxy:              noProxy,
+			DNS:                  dnsServers,
+			Port:                 listenPort,
+			LogLevel:             *logLevel,
+			LoopbackAddressRange: *loopbackAddressRange,
+		}
+	}
 
 	// seed the global random number generator, used in secureoperator
 	rand.Seed(time.Now().UTC().UnixNano())
 
 	// setup logger
 	colog.SetDefaultLevel(colog.LDebug)
-	colog.SetMinLevel(colog.LInfo)
-	level, err := colog.ParseLevel(*loglevel)
-	if err != nil {
-		log.Fatalf("alert: Invalid log level: %s", err.Error())
-	}
-	colog.SetMinLevel(level)
 	colog.SetFormatter(&colog.StdFormatter{
 		Colors: true,
 		Flag:   log.Ldate | log.Ltime | log.Lmicroseconds,
@@ -87,32 +102,31 @@ func main() {
 	colog.ParseFields(true)
 	colog.Register()
 
-	startProxy(level)
+	level, err := colog.ParseLevel(config.LogLevel)
+	if err != nil {
+		log.Fatalf("alert: Invalid log level: %s", err)
+	}
+	colog.SetMinLevel(level)
+
+	startProxy(config)
 }
 
-func startProxy(level colog.Level) {
-	// handling no_proxy environment
-	noProxy := os.Getenv("no_proxy")
-	if noProxy == "" {
-		noProxy = os.Getenv("NO_PROXY")
-	}
-	np := parseNoProxy(noProxy)
-
-	// ports for http
-	ports := toPorts(*proxyListenPorts)
+func startProxy(config Config) {
+	loopback := parseLoopBackAddressRange(config.LoopbackAddressRange)
+	proxyURL := parseProxyURL(config.ProxyURL)
 
 	proxy := transproxy.NewTransproxy(
 		transproxy.TransproxyConfig{
-			DNSListenAddress: *dnsProxyListenAddress,
-			DNSEnableUDP:     *dnsEnableUDP,
-			DNSEnableTCP:     *dnsEnableTCP,
-			PrivateDNS:       *privateDNS,
-			StartLocalIP:     *startLocalIP,
-			EndLocalIP:       *endLocalIP,
+			DNSListenAddress: ":53",
+			DNSEnableUDP:     true,
+			DNSEnableTCP:     true,
+			PrivateDNS:       config.DNS,
+			StartLocalIP:     loopback[0],
+			EndLocalIP:       loopback[1],
 
-			ProxyListenPorts: ports,
-
-			NoProxy: np,
+			ProxyListenPorts: config.Port,
+			ProxyURL:         proxyURL,
+			NoProxy:          config.NoProxy,
 		},
 	)
 	proxy.Start()
@@ -168,32 +182,51 @@ func toPorts(ports string) []int {
 	return p
 }
 
-func parseNoProxy(noProxy string) transproxy.NoProxy {
-	p := strings.Split(noProxy, ",")
+func parseLoopBackAddressRange(s string) []string {
+	defaultRange := []string{"127.0.1.0", "127.0.255.255"}
 
-	var ipArray []string
-	var cidrArray []*net.IPNet
-	var domainArray []string
-
-	for _, v := range p {
-		ip := net.ParseIP(v)
-		if ip != nil {
-			ipArray = append(ipArray, v)
-			continue
-		}
-
-		_, ipnet, err := net.ParseCIDR(v)
-		if err == nil {
-			cidrArray = append(cidrArray, ipnet)
-			continue
-		}
-
-		domainArray = append(domainArray, v)
+	if s == "" {
+		log.Printf("info: Use default range %s-%s", defaultRange[0], defaultRange[1])
+		return defaultRange
+	}
+	loopback := strings.Split(s, "-")
+	if len(loopback) != 2 {
+		log.Fatalf("alert: Invalid loopback address range: %s", s)
 	}
 
-	return transproxy.NoProxy{
-		IPs:     ipArray,
-		CIDRs:   cidrArray,
-		Domains: domainArray,
+	startIP := net.ParseIP(loopback[0])
+	endIP := net.ParseIP(loopback[1])
+
+	if startIP == nil || endIP == nil {
+		log.Fatalf("alert: Invalid loopback address range (Invalid IP format): %s", s)
 	}
+
+	start := ip2int(startIP)
+	end := ip2int(endIP)
+	if !strings.HasPrefix(loopback[0], "127.") || !strings.HasPrefix(loopback[1], "127.") ||
+		loopback[0] == "127.0.0.0" || loopback[1] == "127.255.255.255" ||
+		start >= end {
+		log.Fatalf("alert: Invalid loopback address range (Need to set from 127.0.0.1 to 127.255.255.254): %s", s)
+	}
+
+	return loopback
+}
+
+func ip2int(ip net.IP) uint32 {
+	if len(ip) == 16 {
+		return binary.BigEndian.Uint32(ip[12:16])
+	}
+	return binary.BigEndian.Uint32(ip)
+}
+
+func parseProxyURL(proxyURL string) *url.URL {
+	if proxyURL == "" {
+		log.Fatalf("alert: Not configured http_proxy")
+	}
+
+	u, err := url.Parse(proxyURL)
+	if err != nil {
+		log.Fatalf("alert: Invalid http_proxy: %s", err)
+	}
+	return u
 }

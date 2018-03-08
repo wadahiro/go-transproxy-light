@@ -3,14 +3,9 @@ package transproxy
 import (
 	"fmt"
 	"log"
-	"net"
+	"net/url"
+	"strings"
 )
-
-type NoProxy struct {
-	IPs     []string
-	CIDRs   []*net.IPNet
-	Domains []string
-}
 
 type Proxy interface {
 	Start() error
@@ -29,23 +24,27 @@ type TransproxyConfig struct {
 	DNSListenAddress string
 	DNSEnableUDP     bool
 	DNSEnableTCP     bool
-	PrivateDNS       string
-	NoProxyZones     []string
+	PrivateDNS       []string
+	NoProxy          []string
 	StartLocalIP     string
 	EndLocalIP       string
 
 	ProxyListenPorts []int
-	NoProxy          NoProxy
+	ProxyURL         *url.URL
 }
 
 func NewTransproxy(c TransproxyConfig) *Transproxy {
+	// Add proxy host to no_proxy list
+	proxyHost := strings.Split(c.ProxyURL.Host, ":")
+	c.NoProxy = append(c.NoProxy, proxyHost[0])
+
 	dnsProxy := NewDNSProxy(
 		DNSProxyConfig{
 			DNSListenAddress: c.DNSListenAddress,
 			DNSEnableUDP:     c.DNSEnableUDP,
 			DNSEnableTCP:     c.DNSEnableTCP,
 			PrivateDNS:       c.PrivateDNS,
-			NoProxyZones:     c.NoProxy.Domains,
+			NoProxy:          c.NoProxy,
 			StartLocalIP:     c.StartLocalIP,
 			EndLocalIP:       c.EndLocalIP,
 		},
@@ -56,7 +55,7 @@ func NewTransproxy(c TransproxyConfig) *Transproxy {
 		proxy := NewPassThroughProxy(
 			PassThroughProxyConfig{
 				ListenAddress: fmt.Sprintf(":%d", p),
-				NoProxy:       c.NoProxy,
+				ProxyURL:      c.ProxyURL,
 				DNSProxy:      dnsProxy,
 			},
 		)

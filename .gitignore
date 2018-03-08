@@ -3,3 +3,4 @@ vendor
 *.zip
 bin/
 rsrc.syso
+config.toml
